@@ -3,7 +3,7 @@ name: build
 jobs:
   build-linux-aarch64:
     name: build on Ubuntu aarch64
-    runs-on: ubuntu-20.04-arm
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@master
       - run: bin/build-linux-aarch64.sh
@@ -14,7 +14,7 @@ jobs:
 
   build-linux-x86-64:
     name: build on Ubuntu x86_64
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@master
       - run: bin/build-linux-x86-64.sh
@@ -91,7 +91,7 @@ jobs:
   deploy:
     name: deploy
     needs: [build-linux-aarch64, build-linux-x86-64, build-macos-aarch64, build-macos-x86-64, build-win32]
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@master
       - uses: actions/download-artifact@v4
