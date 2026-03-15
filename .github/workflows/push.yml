@@ -88,6 +88,32 @@ jobs:
           name: win32-${{ matrix.distarch }}
           path: artifacts/win32-${{ matrix.distarch }}
 
+  test:
+    name: test
+    needs: [build-linux-x86-64]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-x86-64
+          path: artifacts/linux-x86-64
+      - name: Copy native libs into platform package
+        run: |
+          for lib in libbrotlicommon libbrotlienc libbrotlidec; do
+            cp -L "artifacts/linux-x86-64/lib/${lib}.so" "libbrotli-x86_64-linux/${lib}.so"
+          done
+      - uses: Bogdanp/setup-racket@v1.15
+        with:
+          architecture: 'x64'
+          distribution: 'full'
+          variant: 'CS'
+          version: '9.1'
+      - name: Install packages and run tests
+        run: |
+          raco pkg install --auto --batch libbrotli-x86_64-linux/ libbrotli/
+          raco test libbrotli/
+
   release:
     name: release
     if: startsWith(github.ref, 'refs/tags/v')
