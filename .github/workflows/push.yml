@@ -117,7 +117,7 @@ jobs:
   release:
     name: release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-linux-aarch64, build-linux-x86-64, build-macos-aarch64, build-macos-x86-64, build-win32]
+    needs: [build-linux-aarch64, build-linux-x86-64, build-macos-aarch64, build-macos-x86-64, build-win32, test]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
