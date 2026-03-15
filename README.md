@@ -1,0 +1,21 @@
+# racket-libbrotli
+
+This package distributes [libbrotli] as a Racket package for Linux,
+macOS, and Windows.
+
+Each platform package ships three shared libraries:
+`libbrotlicommon`, `libbrotlienc`, and `libbrotlidec`.
+
+The dynamic libraries are built on the following systems:
+
+| Package                  | OS/Version  | Compatibility                           |
+|--------------------------|-------------|-----------------------------------------|
+| libbrotli-aarch64-linux  | Debian 11   | Ubuntu 20.04 and up, Debian 11 and up   |
+| libbrotli-x86_64-linux   | Debian 11   | Ubuntu 20.04 and up, Debian 11 and up   |
+| libbrotli-aarch64-macosx | macOS 15    | macOS 14 (Sonoma) and up                |
+| libbrotli-x86_64-macosx  | macOS 15    | macOS 15 (Sequoia) and up               |
+| libbrotli-i386-win32     | Windows 11  | Windows 11 and up                       |
+| libbrotli-x86_64-win32   | Windows 11  | Windows 11 and up                       |
+
+
+[libbrotli]: https://github.com/google/brotli

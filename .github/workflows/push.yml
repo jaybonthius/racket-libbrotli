@@ -1,0 +1,179 @@
+on: push
+name: build
+jobs:
+  build-linux-aarch64:
+    name: build on Ubuntu aarch64
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@master
+      - run: bin/build-linux-aarch64.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-aarch64
+          path: artifacts/linux-aarch64
+
+  build-linux-x86-64:
+    name: build on Ubuntu x86_64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@master
+      - run: bin/build-linux-x86-64.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86-64
+          path: artifacts/linux-x86-64
+
+  build-macos-aarch64:
+    name: build on macOS aarch64
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@master
+      - run: bin/build-macos-aarch64.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-aarch64
+          path: artifacts/macos-aarch64
+
+  build-macos-x86-64:
+    name: build on macOS x86-64
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@master
+      - run: bin/build-macos-x86-64.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-x86-64
+          path: artifacts/macos-x86-64
+
+  build-win32:
+    name: build on Windows ${{ matrix.arch }}
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        include:
+          - arch: i686
+            msystem: mingw32
+            distarch: i386
+          - arch: x86_64
+            msystem: mingw64
+            distarch: x86-64
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@master
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          install: git
+          pacboy: toolchain:p cmake:p ninja:p
+          update: true
+      - name: Getting submodule
+        run: |
+          git submodule update --init
+      - name: Building brotli
+        run: |
+          mkdir -p brotli/out
+          cd brotli/out
+          cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON ..
+          cmake --build . --config Release
+      - name: Create artifacts
+        run: |
+          mkdir -p artifacts/win32-${{ matrix.distarch }}/lib/
+          cp brotli/out/libbrotlicommon.dll artifacts/win32-${{ matrix.distarch }}/lib/libbrotlicommon.dll
+          cp brotli/out/libbrotlienc.dll artifacts/win32-${{ matrix.distarch }}/lib/libbrotlienc.dll
+          cp brotli/out/libbrotlidec.dll artifacts/win32-${{ matrix.distarch }}/lib/libbrotlidec.dll
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win32-${{ matrix.distarch }}
+          path: artifacts/win32-${{ matrix.distarch }}
+
+  test:
+    name: test
+    needs: [build-linux-x86-64]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-x86-64
+          path: artifacts/linux-x86-64
+      - name: Copy native libs into platform package
+        run: |
+          for lib in libbrotlicommon libbrotlienc libbrotlidec; do
+            cp -L "artifacts/linux-x86-64/lib/${lib}.so" "libbrotli-x86_64-linux/${lib}.so"
+          done
+      - uses: Bogdanp/setup-racket@v1.15
+        with:
+          architecture: 'x64'
+          distribution: 'full'
+          variant: 'CS'
+          version: '9.1'
+      - name: Install packages and run tests
+        run: |
+          raco pkg install --auto --batch libbrotli-x86_64-linux/ libbrotli/
+          raco test libbrotli/
+
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-linux-aarch64, build-linux-x86-64, build-macos-aarch64, build-macos-x86-64, build-win32, test]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-aarch64
+          path: artifacts/linux-aarch64
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-x86-64
+          path: artifacts/linux-x86-64
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-aarch64
+          path: artifacts/macos-aarch64
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-x86-64
+          path: artifacts/macos-x86-64
+      - uses: actions/download-artifact@v4
+        with:
+          name: win32-i386
+          path: artifacts/win32-i386
+      - uses: actions/download-artifact@v4
+        with:
+          name: win32-x86-64
+          path: artifacts/win32-x86-64
+      - name: Package platform tarballs
+        run: |
+          for lib in libbrotlicommon libbrotlienc libbrotlidec; do
+            cp -L "artifacts/linux-aarch64/lib/${lib}.so" "libbrotli-aarch64-linux/${lib}.so"
+            cp -L "artifacts/linux-x86-64/lib/${lib}.so" "libbrotli-x86_64-linux/${lib}.so"
+            cp -L "artifacts/macos-aarch64/lib/${lib}.dylib" "libbrotli-aarch64-macosx/${lib}.dylib"
+            cp -L "artifacts/macos-x86-64/lib/${lib}.dylib" "libbrotli-x86_64-macosx/${lib}.dylib"
+            cp "artifacts/win32-i386/lib/${lib}.dll" "libbrotli-i386-win32/${lib}.dll"
+            cp "artifacts/win32-x86-64/lib/${lib}.dll" "libbrotli-x86_64-win32/${lib}.dll"
+          done
+          version=$(grep version libbrotli-x86_64-linux/info.rkt | cut -d'"' -f2)
+          for package in libbrotli-aarch64-linux libbrotli-aarch64-macosx libbrotli-x86_64-linux libbrotli-x86_64-macosx libbrotli-i386-win32 libbrotli-x86_64-win32; do
+            pushd "${package}"
+            tar -czf "../${package}-${version}.tar.gz" LICENSE info.rkt libbrotli*
+            popd
+          done
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(grep version libbrotli-x86_64-linux/info.rkt | cut -d'"' -f2)
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            libbrotli-aarch64-linux-${version}.tar.gz \
+            libbrotli-aarch64-macosx-${version}.tar.gz \
+            libbrotli-x86_64-linux-${version}.tar.gz \
+            libbrotli-x86_64-macosx-${version}.tar.gz \
+            libbrotli-i386-win32-${version}.tar.gz \
+            libbrotli-x86_64-win32-${version}.tar.gz
