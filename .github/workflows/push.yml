@@ -25,10 +25,10 @@ jobs:
 
   build-macos-aarch64:
     name: build on macOS aarch64
-    runs-on: macOS-13-xlarge
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@master
-      - run: arch -arm64 bin/build-macos-aarch64.sh
+      - run: bin/build-macos-aarch64.sh
       - uses: actions/upload-artifact@v4
         with:
           name: macos-aarch64
@@ -36,7 +36,7 @@ jobs:
 
   build-macos-x86-64:
     name: build on macOS x86-64
-    runs-on: macOS-11
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@master
       - run: bin/build-macos-x86-64.sh
