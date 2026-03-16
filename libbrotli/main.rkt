@@ -7,12 +7,15 @@
           ;; One-shot compression / decompression
           [brotli-compress!
            (->* (bytes? bytes?)
-                (quality/c #:window window/c #:mode mode/c #:lgblock lgblock/c)
+                (quality/c #:window window/c #:mode mode/c #:lgblock lgblock/c #:dictionary bytes?)
                 exact-nonnegative-integer?)]
-          [brotli-decompress! (-> bytes? bytes? exact-nonnegative-integer?)]
+          [brotli-decompress! (->* (bytes? bytes?) (#:dictionary bytes?) exact-nonnegative-integer?)]
           [brotli-compress
-           (->* (bytes?) (quality/c #:window window/c #:mode mode/c #:lgblock lgblock/c) bytes?)]
-          [brotli-decompress (->* (bytes?) ((or/c #f exact-positive-integer?)) bytes?)]
+           (->* (bytes?)
+                (quality/c #:window window/c #:mode mode/c #:lgblock lgblock/c #:dictionary bytes?)
+                bytes?)]
+          [brotli-decompress
+           (->* (bytes?) ((or/c #f exact-positive-integer?) #:dictionary bytes?) bytes?)]
           ;; Streaming output port
           [open-brotli-output
            (->* (output-port?)
@@ -20,11 +23,13 @@
                            #:window window/c
                            #:mode mode/c
                            #:lgblock lgblock/c
+                           #:dictionary bytes?
                            #:close? boolean?
                            #:name symbol?)
                 output-port?)]
           ;; Streaming input port
-          [open-brotli-input (->* (input-port?) (#:close? boolean? #:name symbol?) input-port?)])
+          [open-brotli-input
+           (->* (input-port?) (#:dictionary bytes? #:close? boolean? #:name symbol?) input-port?)])
 
          ;; Constants (no contracts needed for plain values)
          quality/c

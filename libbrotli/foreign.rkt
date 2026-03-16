@@ -57,6 +57,9 @@
 (define BROTLI_PARAM_LGWIN 2)
 (define BROTLI_PARAM_LGBLOCK 3)
 
+;; BrotliSharedDictionaryType
+(define BROTLI_SHARED_DICTIONARY_RAW 0)
+
 ;; ---- Decoder constants ----
 
 (define BROTLI_DECODER_RESULT_ERROR 0)
@@ -105,6 +108,21 @@
 ;; BROTLI_BOOL BrotliEncoderIsFinished(BrotliEncoderState* state)
 (define-brotli-enc BrotliEncoderIsFinished (_fun _pointer -> _int))
 
+;; ---- Encoder Dictionary FFI ----
+
+;; BrotliEncoderPreparedDictionary* BrotliEncoderPrepareDictionary(
+;;   BrotliSharedDictionaryType type, size_t data_size, const uint8_t* data,
+;;   int quality, brotli_alloc_func, brotli_free_func, void* opaque)
+(define-brotli-enc BrotliEncoderPrepareDictionary
+                   (_fun _int _size _bytes _int _pointer _pointer _pointer -> _pointer))
+
+;; void BrotliEncoderDestroyPreparedDictionary(BrotliEncoderPreparedDictionary* dictionary)
+(define-brotli-enc BrotliEncoderDestroyPreparedDictionary (_fun _pointer -> _void))
+
+;; BROTLI_BOOL BrotliEncoderAttachPreparedDictionary(
+;;   BrotliEncoderState* state, const BrotliEncoderPreparedDictionary* dictionary)
+(define-brotli-enc BrotliEncoderAttachPreparedDictionary (_fun _pointer _pointer -> _int))
+
 ;; ---- Decoder FFI ----
 
 ;; BrotliDecoderState* BrotliDecoderCreateInstance(
@@ -137,17 +155,56 @@
 ;; const uint8_t* BrotliDecoderTakeOutput(BrotliDecoderState* state, size_t* size)
 (define-brotli-dec BrotliDecoderTakeOutput (_fun _pointer _pointer -> _pointer))
 
+;; ---- Decoder Dictionary FFI ----
+
+;; BROTLI_BOOL BrotliDecoderAttachDictionary(
+;;   BrotliDecoderState* state, BrotliSharedDictionaryType type,
+;;   size_t data_size, const uint8_t* data)
+(define-brotli-dec BrotliDecoderAttachDictionary (_fun _pointer _int _size _bytes -> _int))
+
 ;; ---- Helpers ----
+
+;; Prepare and attach a dictionary to an encoder state.  Returns the
+;; prepared-dictionary pointer (caller must destroy it) or #f when the
+;; dictionary is empty.
+(define (encoder-attach-dictionary! state dictionary quality)
+  (if (zero? (bytes-length dictionary))
+      #f
+      (let ([prepared (BrotliEncoderPrepareDictionary BROTLI_SHARED_DICTIONARY_RAW
+                                                      (bytes-length dictionary)
+                                                      dictionary
+                                                      quality
+                                                      #f
+                                                      #f
+                                                      #f)])
+        (unless prepared
+          (error 'brotli "failed to prepare encoder dictionary"))
+        (unless (not (zero? (BrotliEncoderAttachPreparedDictionary state prepared)))
+          (BrotliEncoderDestroyPreparedDictionary prepared)
+          (error 'brotli "failed to attach encoder dictionary"))
+        prepared)))
+
+;; Attach a dictionary to a decoder state.  Keeps a reference to the
+;; dictionary bytes alive (caller's responsibility for streaming).
+(define (decoder-attach-dictionary! state dictionary who)
+  (when (> (bytes-length dictionary) 0)
+    (unless (not (zero? (BrotliDecoderAttachDictionary state
+                                                       BROTLI_SHARED_DICTIONARY_RAW
+                                                       (bytes-length dictionary)
+                                                       dictionary)))
+      (error who "failed to attach decoder dictionary"))))
 
 (define (brotli-compress! src
                           dst
                           [quality BROTLI_DEFAULT_QUALITY]
                           #:window [window BROTLI_DEFAULT_WINDOW]
                           #:mode [mode BROTLI_MODE_GENERIC]
-                          #:lgblock [lgblock 0])
+                          #:lgblock [lgblock 0]
+                          #:dictionary [dictionary #""])
   (define state (BrotliEncoderCreateInstance #f #f #f))
   (unless state
     (error 'brotli-compress! "failed to create encoder instance"))
+  (define prepared-dict #f)
   (dynamic-wind
    void
    (lambda ()
@@ -160,6 +217,7 @@
      (when (> lgblock 0)
        (unless (not (zero? (BrotliEncoderSetParameter state BROTLI_PARAM_LGBLOCK lgblock)))
          (error 'brotli-compress! "failed to set lgblock to ~a" lgblock)))
+     (set! prepared-dict (encoder-attach-dictionary! state dictionary quality))
      ;; Compress the entire input with FINISH in one call, collecting output
      ;; into the pre-allocated dst buffer.
      (define sink (open-output-bytes))
@@ -170,14 +228,18 @@
        (error 'brotli-compress! "output buffer too small"))
      (bytes-copy! dst 0 compressed 0 n)
      n)
-   (lambda () (BrotliEncoderDestroyInstance state))))
+   (lambda ()
+     (when prepared-dict
+       (BrotliEncoderDestroyPreparedDictionary prepared-dict))
+     (BrotliEncoderDestroyInstance state))))
 
-(define (brotli-decompress! src dst)
+(define (brotli-decompress! src dst #:dictionary [dictionary #""])
   (define state (BrotliDecoderCreateInstance #f #f #f))
   (unless state
     (error 'brotli-decompress! "failed to create decoder instance"))
   (dynamic-wind void
                 (lambda ()
+                  (decoder-attach-dictionary! state dictionary 'brotli-decompress!)
                   (define avail-in-ptr (malloc _size 'atomic))
                   (define next-in-ptr (malloc _pointer 'atomic))
                   (define avail-out-ptr (malloc _size 'atomic))
@@ -211,14 +273,23 @@
                          [quality BROTLI_DEFAULT_QUALITY]
                          #:window [window BROTLI_DEFAULT_WINDOW]
                          #:mode [mode BROTLI_MODE_GENERIC]
-                         #:lgblock [lgblock 0])
+                         #:lgblock [lgblock 0]
+                         #:dictionary [dictionary #""])
   (define bound (BrotliEncoderMaxCompressedSize (bytes-length src)))
   (when (zero? bound)
     (error 'brotli-compress "input too large"))
   (define dst (make-bytes bound))
-  (subbytes dst 0 (brotli-compress! src dst quality #:window window #:mode mode #:lgblock lgblock)))
+  (subbytes dst
+            0
+            (brotli-compress! src
+                              dst
+                              quality
+                              #:window window
+                              #:mode mode
+                              #:lgblock lgblock
+                              #:dictionary dictionary)))
 
-(define (brotli-decompress src [max-decompressed-size #f])
+(define (brotli-decompress src [max-decompressed-size #f] #:dictionary [dictionary #""])
   ;; Brotli streams do not embed the decompressed size, so we use
   ;; streaming decompression with a growing buffer.
   (define state (BrotliDecoderCreateInstance #f #f #f))
@@ -227,6 +298,7 @@
   (dynamic-wind
    void
    (lambda ()
+     (decoder-attach-dictionary! state dictionary 'brotli-decompress)
      (define avail-in-ptr (malloc _size 'atomic))
      (define next-in-ptr (malloc _pointer 'atomic))
      (define avail-out-ptr (malloc _size 'atomic))
@@ -335,6 +407,7 @@
                             #:window [window BROTLI_DEFAULT_WINDOW]
                             #:mode [mode BROTLI_MODE_GENERIC]
                             #:lgblock [lgblock 0]
+                            #:dictionary [dictionary #""]
                             #:close? [close? #t]
                             #:name [name 'brotli-output])
   (define state (BrotliEncoderCreateInstance #f #f #f))
@@ -350,6 +423,8 @@
   (when (> lgblock 0)
     (unless (not (zero? (BrotliEncoderSetParameter state BROTLI_PARAM_LGBLOCK lgblock)))
       (error 'open-brotli-output "failed to set lgblock to ~a" lgblock)))
+
+  (define prepared-dict (encoder-attach-dictionary! state dictionary quality))
 
   (define closed? #f)
 
@@ -368,6 +443,8 @@
       ;; Finalise the brotli stream.
       (encoder-compress-stream! state BROTLI_OPERATION_FINISH #"" out)
       (flush-output out)
+      (when prepared-dict
+        (BrotliEncoderDestroyPreparedDictionary prepared-dict))
       (BrotliEncoderDestroyInstance state)
       (when close?
         (close-output-port out))))
@@ -428,10 +505,18 @@
 ;; Returns a new input port that decompresses Brotli-compressed data read
 ;; from `in`.  Closing the returned port destroys the decoder state.
 ;; If `close?` is #t (the default), the underlying port `in` is also closed.
-(define (open-brotli-input in #:close? [close? #t] #:name [name 'brotli-input])
+(define (open-brotli-input in
+                           #:dictionary [dictionary #""]
+                           #:close? [close? #t]
+                           #:name [name 'brotli-input])
   (define state (BrotliDecoderCreateInstance #f #f #f))
   (unless state
     (error 'open-brotli-input "failed to create decoder instance"))
+
+  (decoder-attach-dictionary! state dictionary 'open-brotli-input)
+  ;; Keep a reference to the dictionary bytes alive for the lifetime of the
+  ;; decoder (the C library references the data directly).
+  (define _dictionary-ref dictionary)
 
   ;; Internal buffer of decompressed bytes not yet returned to the caller.
   (define pending (open-output-bytes))

@@ -312,3 +312,85 @@
     (define decompressed (port->bytes bport))
     (close-input-port bport)
     (check-equal? decompressed input (format "quality ~a round-trip via input port failed" q))))
+
+;; =========================================================================
+;; Dictionary tests
+;; =========================================================================
+
+(define test-dictionary #"The quick brown fox jumps over the lazy dog. HTTP/1.1 200 OK")
+
+(test-case "dictionary: one-shot compress/decompress round-trip"
+  (define input #"The quick brown fox jumps over the lazy dog.")
+  (define compressed (brotli-compress input #:dictionary test-dictionary))
+  (define decompressed (brotli-decompress compressed #:dictionary test-dictionary))
+  (check-equal? decompressed input))
+
+(test-case "dictionary: brotli-compress!/brotli-decompress! round-trip"
+  (define input #"The quick brown fox jumps over the lazy dog.")
+  (define dst (make-bytes 256))
+  (define n (brotli-compress! input dst #:dictionary test-dictionary))
+  (check-true (> n 0))
+  (define compressed (subbytes dst 0 n))
+  (define out (make-bytes (bytes-length input)))
+  (define m (brotli-decompress! compressed out #:dictionary test-dictionary))
+  (check-equal? (subbytes out 0 m) input))
+
+(test-case "dictionary: improves compression ratio"
+  ;; Data that partially overlaps with the dictionary should compress better.
+  (define input
+    #"The quick brown fox jumps over the lazy dog. HTTP/1.1 200 OK Content-Type: text/html")
+  (define without-dict (brotli-compress input))
+  (define with-dict (brotli-compress input #:dictionary test-dictionary))
+  (check-true (<= (bytes-length with-dict) (bytes-length without-dict))
+              "dictionary should not make compression worse"))
+
+(test-case "dictionary: wrong dictionary fails to decompress correctly"
+  (define input #"The quick brown fox jumps.")
+  (define compressed (brotli-compress input #:dictionary test-dictionary))
+  ;; Decompressing without the dictionary (or with the wrong one) should
+  ;; either produce wrong data or error.
+  (define wrong-dict #"completely different dictionary content here")
+  (check-exn exn:fail?
+             (lambda ()
+               (define result (brotli-decompress compressed #:dictionary wrong-dict))
+               ;; If it didn't error, it should at least produce wrong output.
+               (unless (equal? result input)
+                 (error "wrong output")))))
+
+(test-case "dictionary: empty dictionary is no-op"
+  (define input #"Hello, Brotli!")
+  (define without (brotli-compress input))
+  (define with-empty (brotli-compress input #:dictionary #""))
+  (check-equal? without with-empty))
+
+(test-case "dictionary: streaming output port round-trip"
+  (define input #"The quick brown fox jumps over the lazy dog.")
+  (define sink (open-output-bytes))
+  (define bport (open-brotli-output sink #:quality 4 #:dictionary test-dictionary #:close? #f))
+  (write-bytes input bport)
+  (close-output-port bport)
+  (define compressed (get-output-bytes sink))
+  (define decompressed (brotli-decompress compressed #:dictionary test-dictionary))
+  (check-equal? decompressed input))
+
+(test-case "dictionary: streaming input port round-trip"
+  (define input #"The quick brown fox jumps over the lazy dog.")
+  (define compressed (brotli-compress input #:dictionary test-dictionary))
+  (define bport
+    (open-brotli-input (open-input-bytes compressed) #:dictionary test-dictionary #:close? #f))
+  (define decompressed (port->bytes bport))
+  (close-input-port bport)
+  (check-equal? decompressed input))
+
+(test-case "dictionary: streaming output -> streaming input round-trip"
+  (define input #"The quick brown fox jumps over the lazy dog. HTTP/1.1 200 OK")
+  (define sink (open-output-bytes))
+  (define out-port (open-brotli-output sink #:quality 4 #:dictionary test-dictionary #:close? #f))
+  (write-bytes input out-port)
+  (close-output-port out-port)
+  (define compressed (get-output-bytes sink))
+  (define in-port
+    (open-brotli-input (open-input-bytes compressed) #:dictionary test-dictionary #:close? #f))
+  (define decompressed (port->bytes in-port))
+  (close-input-port in-port)
+  (check-equal? decompressed input))

@@ -16,13 +16,19 @@ compression library. Provides one-shot compression/decompression of byte strings
 a streaming output port for incremental compression, and a streaming input port
 for incremental decompression.
 
+All compression and decompression functions accept an optional
+@racket[#:dictionary] parameter for LZ77 prefix dictionaries. If a dictionary is
+used for compression, the @bold{same dictionary must be used for decompression}.
+Dictionary data must not exceed 16 MiB.
+
 @section{One-Shot Compression}
 
 @defproc[(brotli-compress [src bytes?]
                           [quality quality/c BROTLI_DEFAULT_QUALITY]
                           [#:window window window/c BROTLI_DEFAULT_WINDOW]
                           [#:mode mode mode/c BROTLI_MODE_GENERIC]
-                          [#:lgblock lgblock lgblock/c 0]) bytes?]{
+                          [#:lgblock lgblock lgblock/c 0]
+                          [#:dictionary dictionary bytes? #""]) bytes?]{
 Compresses @racket[src] and returns a fresh byte string containing the compressed
 output.
 }
@@ -32,7 +38,8 @@ output.
                            [quality quality/c BROTLI_DEFAULT_QUALITY]
                            [#:window window window/c BROTLI_DEFAULT_WINDOW]
                            [#:mode mode mode/c BROTLI_MODE_GENERIC]
-                           [#:lgblock lgblock lgblock/c 0]) exact-nonnegative-integer?]{
+                           [#:lgblock lgblock lgblock/c 0]
+                           [#:dictionary dictionary bytes? #""]) exact-nonnegative-integer?]{
 Compresses @racket[src] into the pre-allocated buffer @racket[dst]. Returns the
 number of bytes written to @racket[dst]. Raises @racket[exn:fail?] if compression
 fails (e.g., @racket[dst] is too small).
@@ -41,7 +48,8 @@ fails (e.g., @racket[dst] is too small).
 @section{One-Shot Decompression}
 
 @defproc[(brotli-decompress [src bytes?]
-                            [max-decompressed-size (or/c #f exact-positive-integer?) #f]) bytes?]{
+                            [max-decompressed-size (or/c #f exact-positive-integer?) #f]
+                            [#:dictionary dictionary bytes? #""]) bytes?]{
 Decompresses @racket[src] and returns a fresh byte string. When
 @racket[max-decompressed-size] is not @racket[#f], the decompressed output is
 bounded to that many bytes; an @racket[exn:fail?] is raised if the limit is
@@ -49,7 +57,8 @@ exceeded. This guards against decompression bombs.
 }
 
 @defproc[(brotli-decompress! [src bytes?]
-                             [dst bytes?]) exact-nonnegative-integer?]{
+                             [dst bytes?]
+                             [#:dictionary dictionary bytes? #""]) exact-nonnegative-integer?]{
 Decompresses @racket[src] into the pre-allocated buffer @racket[dst]. Returns the
 number of bytes written. Raises @racket[exn:fail?] if @racket[dst] is too small or
 the input is invalid.
@@ -62,6 +71,7 @@ the input is invalid.
                              [#:window window window/c BROTLI_DEFAULT_WINDOW]
                              [#:mode mode mode/c BROTLI_MODE_GENERIC]
                              [#:lgblock lgblock lgblock/c 0]
+                             [#:dictionary dictionary bytes? #""]
                              [#:close? close? boolean? #t]
                              [#:name name symbol? 'brotli-output]) output-port?]{
 Returns a new output port that compresses everything written to it with Brotli and
@@ -79,6 +89,7 @@ otherwise it is left open.
 @section{Streaming Input Port}
 
 @defproc[(open-brotli-input [in input-port?]
+                            [#:dictionary dictionary bytes? #""]
                             [#:close? close? boolean? #t]
                             [#:name name symbol? 'brotli-input]) input-port?]{
 Returns a new input port that decompresses Brotli-compressed data read from
