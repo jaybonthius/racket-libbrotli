@@ -71,6 +71,11 @@
   (define compressed (brotli-compress input))
   (check-exn exn:fail? (lambda () (brotli-decompress compressed 10))))
 
+(test-case "brotli-compress! with too-small output buffer"
+  (define input (make-bytes 4096 (char->integer #\a)))
+  (define tiny-dst (make-bytes 1))
+  (check-exn exn:fail? (lambda () (brotli-compress! input tiny-dst))))
+
 ;; -- Mode, window, lgblock parameters --------------------------------------
 
 (test-case "round-trip with mode TEXT"
@@ -199,6 +204,13 @@
   (write-bytes #"data" bport)
   (close-output-port bport)
   (check-true (port-closed? sink) "underlying port should be closed"))
+
+(test-case "streaming: close? #f leaves underlying port open"
+  (define sink (open-output-bytes))
+  (define bport (open-brotli-output sink #:close? #f))
+  (write-bytes #"data" bport)
+  (close-output-port bport)
+  (check-false (port-closed? sink) "underlying port should remain open"))
 
 (test-case "streaming: write-string works through port"
   (define sink (open-output-bytes))
@@ -394,3 +406,116 @@
   (define decompressed (port->bytes in-port))
   (close-input-port in-port)
   (check-equal? decompressed input))
+
+;; =========================================================================
+;; Contract violation tests
+;; =========================================================================
+
+(test-case "contract: invalid quality rejected"
+  (check-exn exn:fail? (lambda () (brotli-compress #"data" 15)))
+  (check-exn exn:fail? (lambda () (brotli-compress #"data" -1))))
+
+(test-case "contract: invalid window rejected"
+  (check-exn exn:fail? (lambda () (brotli-compress #"data" #:window 5)))
+  (check-exn exn:fail? (lambda () (brotli-compress #"data" #:window 25))))
+
+(test-case "contract: invalid mode rejected"
+  (check-exn exn:fail? (lambda () (brotli-compress #"data" #:mode 3)))
+  (check-exn exn:fail? (lambda () (brotli-compress #"data" #:mode -1))))
+
+(test-case "contract: invalid lgblock rejected"
+  (check-exn exn:fail? (lambda () (brotli-compress #"data" #:lgblock 7)))
+  (check-exn exn:fail? (lambda () (brotli-compress #"data" #:lgblock 15)))
+  (check-exn exn:fail? (lambda () (brotli-compress #"data" #:lgblock 25))))
+
+;; =========================================================================
+;; Combined parameter tests
+;; =========================================================================
+
+(test-case "brotli-compress! with lgblock and dictionary"
+  (define input #"The quick brown fox jumps over the lazy dog.")
+  (define dst (make-bytes 256))
+  (define n (brotli-compress! input dst #:lgblock 16 #:dictionary test-dictionary))
+  (check-true (> n 0))
+  (define compressed (subbytes dst 0 n))
+  (define decompressed (brotli-decompress compressed #:dictionary test-dictionary))
+  (check-equal? decompressed input))
+
+(test-case "streaming output: dictionary + mode + window + lgblock combined"
+  (define input #"The quick brown fox jumps over the lazy dog. HTTP/1.1 200 OK")
+  (define sink (open-output-bytes))
+  (define bport
+    (open-brotli-output sink
+                        #:quality 5
+                        #:mode BROTLI_MODE_TEXT
+                        #:window 18
+                        #:lgblock 16
+                        #:dictionary test-dictionary
+                        #:close? #f))
+  (write-bytes input bport)
+  (close-output-port bport)
+  (define compressed (get-output-bytes sink))
+  (define decompressed (brotli-decompress compressed #:dictionary test-dictionary))
+  (check-equal? decompressed input))
+
+;; =========================================================================
+;; Stronger dictionary assertion
+;; =========================================================================
+
+(test-case "dictionary: strictly improves ratio on overlapping data"
+  ;; Repeat dictionary content many times so the benefit is unambiguous.
+  (define input
+    (apply bytes-append
+           (for/list ([_ (in-range 20)])
+             #"The quick brown fox jumps over the lazy dog. HTTP/1.1 200 OK ")))
+  (define without-dict (brotli-compress input))
+  (define with-dict (brotli-compress input #:dictionary test-dictionary))
+  (check-true (< (bytes-length with-dict) (bytes-length without-dict))
+              "dictionary should strictly improve compression on highly overlapping data"))
+
+;; =========================================================================
+;; Streaming input port: wrong dictionary
+;; =========================================================================
+
+(test-case "dictionary: streaming input port with wrong dictionary"
+  (define input #"The quick brown fox jumps over the lazy dog.")
+  (define compressed (brotli-compress input #:dictionary test-dictionary))
+  (define wrong-dict #"completely different dictionary content here")
+  (check-exn
+   exn:fail?
+   (lambda ()
+     (define bport
+       (open-brotli-input (open-input-bytes compressed) #:dictionary wrong-dict #:close? #f))
+     (define result (port->bytes bport))
+     (close-input-port bport)
+     ;; If it didn't error, it should at least produce wrong output.
+     (unless (equal? result input)
+       (error "wrong output")))))
+
+;; =========================================================================
+;; Non-uniform large payload
+;; =========================================================================
+
+(test-case "round-trip with non-uniform large payload"
+  ;; Build a pseudo-random but deterministic byte string with varied content.
+  (define size 100000)
+  (define buf (make-bytes size))
+  (for ([i (in-range size)])
+    (bytes-set! buf i (modulo (* i 7919) 256)))
+  (define compressed (brotli-compress buf))
+  (check-equal? (brotli-decompress compressed) buf))
+
+(test-case "streaming round-trip with non-uniform large payload"
+  (define size 100000)
+  (define buf (make-bytes size))
+  (for ([i (in-range size)])
+    (bytes-set! buf i (modulo (* i 7919) 256)))
+  (define sink (open-output-bytes))
+  (define out-port (open-brotli-output sink #:quality 4 #:close? #f))
+  (write-bytes buf out-port)
+  (close-output-port out-port)
+  (define compressed (get-output-bytes sink))
+  (define in-port (open-brotli-input (open-input-bytes compressed) #:close? #f))
+  (define decompressed (port->bytes in-port))
+  (close-input-port in-port)
+  (check-equal? decompressed buf))
