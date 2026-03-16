@@ -71,6 +71,51 @@
   (define compressed (brotli-compress input))
   (check-exn exn:fail? (lambda () (brotli-decompress compressed 10))))
 
+;; -- Mode, window, lgblock parameters --------------------------------------
+
+(test-case "round-trip with mode TEXT"
+  (define input #"UTF-8 text content for text mode compression test.")
+  (define compressed (brotli-compress input #:mode BROTLI_MODE_TEXT))
+  (check-equal? (brotli-decompress compressed) input))
+
+(test-case "round-trip with mode FONT"
+  (define input #"Font data simulation for font mode compression test.")
+  (define compressed (brotli-compress input #:mode BROTLI_MODE_FONT))
+  (check-equal? (brotli-decompress compressed) input))
+
+(test-case "round-trip with small window"
+  (define input #"Testing compression with minimum window size.")
+  (define compressed (brotli-compress input #:window 10))
+  (check-equal? (brotli-decompress compressed) input))
+
+(test-case "round-trip with large window"
+  (define input #"Testing compression with maximum window size.")
+  (define compressed (brotli-compress input #:window 24))
+  (check-equal? (brotli-decompress compressed) input))
+
+(test-case "round-trip with lgblock 16"
+  (define input #"Testing compression with lgblock 16.")
+  (define compressed (brotli-compress input #:lgblock 16))
+  (check-equal? (brotli-decompress compressed) input))
+
+(test-case "round-trip with lgblock 24"
+  (define input #"Testing compression with lgblock 24.")
+  (define compressed (brotli-compress input #:lgblock 24))
+  (check-equal? (brotli-decompress compressed) input))
+
+(test-case "round-trip with all parameters"
+  (define input #"Testing compression with all parameters set explicitly.")
+  (define compressed (brotli-compress input 5 #:mode BROTLI_MODE_TEXT #:window 18 #:lgblock 20))
+  (check-equal? (brotli-decompress compressed) input))
+
+(test-case "brotli-compress! with mode and window"
+  (define input #"Buffer API with mode and window.")
+  (define dst (make-bytes 256))
+  (define n (brotli-compress! input dst #:mode BROTLI_MODE_TEXT #:window 16))
+  (check-true (> n 0))
+  (define compressed (subbytes dst 0 n))
+  (check-equal? (brotli-decompress compressed) input))
+
 ;; =========================================================================
 ;; Streaming output port tests
 ;; =========================================================================
@@ -162,3 +207,19 @@
   (close-output-port bport)
   (define compressed (get-output-bytes sink))
   (check-equal? (brotli-decompress compressed) #"Hello, streaming brotli!"))
+
+(test-case "streaming: with lgblock parameter"
+  (define sink (open-output-bytes))
+  (define bport (open-brotli-output sink #:quality 4 #:lgblock 16 #:close? #f))
+  (write-bytes #"Testing streaming with lgblock parameter." bport)
+  (close-output-port bport)
+  (define compressed (get-output-bytes sink))
+  (check-equal? (brotli-decompress compressed) #"Testing streaming with lgblock parameter."))
+
+(test-case "streaming: with mode TEXT"
+  (define sink (open-output-bytes))
+  (define bport (open-brotli-output sink #:quality 4 #:mode BROTLI_MODE_TEXT #:close? #f))
+  (write-bytes #"Streaming UTF-8 text mode test." bport)
+  (close-output-port bport)
+  (define compressed (get-output-bytes sink))
+  (check-equal? (brotli-decompress compressed) #"Streaming UTF-8 text mode test."))

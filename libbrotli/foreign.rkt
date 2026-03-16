@@ -54,6 +54,7 @@
 (define BROTLI_PARAM_MODE 0)
 (define BROTLI_PARAM_QUALITY 1)
 (define BROTLI_PARAM_LGWIN 2)
+(define BROTLI_PARAM_LGBLOCK 3)
 
 ;; ---- Decoder constants ----
 
@@ -128,20 +129,38 @@
 
 ;; ---- Helpers ----
 
-(define (brotli-compress! src dst [quality BROTLI_DEFAULT_QUALITY])
-  (define encoded-size-ptr (malloc _size 'atomic))
-  (ptr-set! encoded-size-ptr _size (bytes-length dst))
-  (define ok
-    (BrotliEncoderCompress quality
-                           BROTLI_DEFAULT_WINDOW
-                           BROTLI_MODE_GENERIC
-                           (bytes-length src)
-                           src
-                           encoded-size-ptr
-                           dst))
-  (when (zero? ok)
-    (error 'brotli-compress! "compression failed"))
-  (ptr-ref encoded-size-ptr _size))
+(define (brotli-compress! src
+                          dst
+                          [quality BROTLI_DEFAULT_QUALITY]
+                          #:window [window BROTLI_DEFAULT_WINDOW]
+                          #:mode [mode BROTLI_MODE_GENERIC]
+                          #:lgblock [lgblock 0])
+  (define state (BrotliEncoderCreateInstance #f #f #f))
+  (unless state
+    (error 'brotli-compress! "failed to create encoder instance"))
+  (dynamic-wind
+   void
+   (lambda ()
+     (unless (not (zero? (BrotliEncoderSetParameter state BROTLI_PARAM_QUALITY quality)))
+       (error 'brotli-compress! "failed to set quality to ~a" quality))
+     (unless (not (zero? (BrotliEncoderSetParameter state BROTLI_PARAM_LGWIN window)))
+       (error 'brotli-compress! "failed to set window to ~a" window))
+     (unless (not (zero? (BrotliEncoderSetParameter state BROTLI_PARAM_MODE mode)))
+       (error 'brotli-compress! "failed to set mode to ~a" mode))
+     (when (> lgblock 0)
+       (unless (not (zero? (BrotliEncoderSetParameter state BROTLI_PARAM_LGBLOCK lgblock)))
+         (error 'brotli-compress! "failed to set lgblock to ~a" lgblock)))
+     ;; Compress the entire input with FINISH in one call, collecting output
+     ;; into the pre-allocated dst buffer.
+     (define sink (open-output-bytes))
+     (encoder-compress-stream! state BROTLI_OPERATION_FINISH src sink)
+     (define compressed (get-output-bytes sink))
+     (define n (bytes-length compressed))
+     (when (> n (bytes-length dst))
+       (error 'brotli-compress! "output buffer too small"))
+     (bytes-copy! dst 0 compressed 0 n)
+     n)
+   (lambda () (BrotliEncoderDestroyInstance state))))
 
 (define (brotli-decompress! src dst)
   (define state (BrotliDecoderCreateInstance #f #f #f))
@@ -178,12 +197,16 @@
                      (error 'brotli-decompress! "decompression failed: ~a" msg)]))
                 (lambda () (BrotliDecoderDestroyInstance state))))
 
-(define (brotli-compress src [quality BROTLI_DEFAULT_QUALITY])
+(define (brotli-compress src
+                         [quality BROTLI_DEFAULT_QUALITY]
+                         #:window [window BROTLI_DEFAULT_WINDOW]
+                         #:mode [mode BROTLI_MODE_GENERIC]
+                         #:lgblock [lgblock 0])
   (define bound (BrotliEncoderMaxCompressedSize (bytes-length src)))
   (when (zero? bound)
     (error 'brotli-compress "input too large"))
   (define dst (make-bytes bound))
-  (subbytes dst 0 (brotli-compress! src dst quality)))
+  (subbytes dst 0 (brotli-compress! src dst quality #:window window #:mode mode #:lgblock lgblock)))
 
 (define (brotli-decompress src [max-decompressed-size #f])
   ;; Brotli streams do not embed the decompressed size, so we use
@@ -289,7 +312,7 @@
 
 ;; ---- Streaming Output Port ----
 
-;; (open-brotli-output out [#:quality q] [#:window w] [#:mode m] [#:close? c])
+;; (open-brotli-output out [#:quality q] [#:window w] [#:mode m] [#:lgblock b] [#:close? c])
 ;;   -> output-port?
 ;;
 ;; Returns a new output port that brotli-compresses everything written to it
@@ -301,6 +324,7 @@
                             #:quality [quality 6]
                             #:window [window BROTLI_DEFAULT_WINDOW]
                             #:mode [mode BROTLI_MODE_GENERIC]
+                            #:lgblock [lgblock 0]
                             #:close? [close? #t]
                             #:name [name 'brotli-output])
   (define state (BrotliEncoderCreateInstance #f #f #f))
@@ -313,6 +337,9 @@
     (error 'open-brotli-output "failed to set window to ~a" window))
   (unless (not (zero? (BrotliEncoderSetParameter state BROTLI_PARAM_MODE mode)))
     (error 'open-brotli-output "failed to set mode to ~a" mode))
+  (when (> lgblock 0)
+    (unless (not (zero? (BrotliEncoderSetParameter state BROTLI_PARAM_LGBLOCK lgblock)))
+      (error 'open-brotli-output "failed to set lgblock to ~a" lgblock)))
 
   (define closed? #f)
 

@@ -18,14 +18,20 @@ and a streaming output port for incremental compression.
 @section{One-Shot Compression}
 
 @defproc[(brotli-compress [src bytes?]
-                          [quality quality/c BROTLI_DEFAULT_QUALITY]) bytes?]{
+                          [quality quality/c BROTLI_DEFAULT_QUALITY]
+                          [#:window window window/c BROTLI_DEFAULT_WINDOW]
+                          [#:mode mode mode/c BROTLI_MODE_GENERIC]
+                          [#:lgblock lgblock lgblock/c 0]) bytes?]{
 Compresses @racket[src] and returns a fresh byte string containing the compressed
-output. The optional @racket[quality] controls the compression level.
+output.
 }
 
 @defproc[(brotli-compress! [src bytes?]
                            [dst bytes?]
-                           [quality quality/c BROTLI_DEFAULT_QUALITY]) exact-nonnegative-integer?]{
+                           [quality quality/c BROTLI_DEFAULT_QUALITY]
+                           [#:window window window/c BROTLI_DEFAULT_WINDOW]
+                           [#:mode mode mode/c BROTLI_MODE_GENERIC]
+                           [#:lgblock lgblock lgblock/c 0]) exact-nonnegative-integer?]{
 Compresses @racket[src] into the pre-allocated buffer @racket[dst]. Returns the
 number of bytes written to @racket[dst]. Raises @racket[exn:fail?] if compression
 fails (e.g., @racket[dst] is too small).
@@ -54,6 +60,7 @@ the input is invalid.
                              [#:quality quality quality/c 6]
                              [#:window window window/c BROTLI_DEFAULT_WINDOW]
                              [#:mode mode mode/c BROTLI_MODE_GENERIC]
+                             [#:lgblock lgblock lgblock/c 0]
                              [#:close? close? boolean? #t]
                              [#:name name symbol? 'brotli-output]) output-port?]{
 Returns a new output port that compresses everything written to it with Brotli and
@@ -86,6 +93,12 @@ Accepts one of @racket[BROTLI_MODE_GENERIC] (@racket[0]),
 @racket[BROTLI_MODE_TEXT] (@racket[1]), or @racket[BROTLI_MODE_FONT] (@racket[2]).
 }
 
+@defthing[lgblock/c flat-contract?]{
+Equivalent to @racket[(or/c (=/c 0) (integer-in 16 24))]. Accepts @racket[0]
+(auto-selected based on quality) or an explicit block size from @racket[16] to
+@racket[24]. The value is the base-2 logarithm of the maximum input block size.
+}
+
 @section{Constants}
 
 @subsection{Defaults}
@@ -96,7 +109,8 @@ The default compression quality used by @racket[brotli-compress] and
 }
 
 @defthing[BROTLI_DEFAULT_WINDOW exact-nonnegative-integer? #:value 22]{
-The default sliding-window size used by @racket[open-brotli-output].
+The default sliding-window size used by @racket[brotli-compress],
+@racket[brotli-compress!], and @racket[open-brotli-output].
 }
 
 @subsection{Quality Range}
