@@ -12,8 +12,9 @@
 @defmodule[libbrotli]
 
 Racket bindings for @link["https://github.com/google/brotli"]{Google's Brotli}
-compression library. Provides one-shot compression/decompression of byte strings
-and a streaming output port for incremental compression.
+compression library. Provides one-shot compression/decompression of byte strings,
+a streaming output port for incremental compression, and a streaming input port
+for incremental decompression.
 
 @section{One-Shot Compression}
 
@@ -73,6 +74,27 @@ This is essential for streaming protocols like SSE.
 Closing the returned port finalises the Brotli stream. If @racket[close?] is
 @racket[#t] (the default), the underlying port @racket[out] is also closed;
 otherwise it is left open.
+}
+
+@section{Streaming Input Port}
+
+@defproc[(open-brotli-input [in input-port?]
+                            [#:close? close? boolean? #t]
+                            [#:name name symbol? 'brotli-input]) input-port?]{
+Returns a new input port that decompresses Brotli-compressed data read from
+@racket[in].
+
+Reading from the returned port pulls compressed bytes from @racket[in],
+decompresses them incrementally, and returns the decompressed data. This allows
+decompression of arbitrarily large streams without loading the entire compressed
+input into memory.
+
+Closing the returned port destroys the decoder state. If @racket[close?] is
+@racket[#t] (the default), the underlying port @racket[in] is also closed;
+otherwise it is left open.
+
+Raises @racket[exn:fail?] if the compressed data is corrupt or the stream is
+truncated.
 }
 
 @section{Contracts}

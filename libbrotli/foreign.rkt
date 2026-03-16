@@ -10,6 +10,7 @@
          brotli-compress
          brotli-decompress
          open-brotli-output
+         open-brotli-input
          BROTLI_DEFAULT_QUALITY
          BROTLI_DEFAULT_WINDOW
          BROTLI_MIN_QUALITY
@@ -126,6 +127,15 @@
 
 ;; const char* BrotliDecoderErrorString(BrotliDecoderErrorCode c)
 (define-brotli-dec BrotliDecoderErrorString (_fun _int -> _string))
+
+;; BROTLI_BOOL BrotliDecoderIsFinished(const BrotliDecoderState* state)
+(define-brotli-dec BrotliDecoderIsFinished (_fun _pointer -> _int))
+
+;; BROTLI_BOOL BrotliDecoderHasMoreOutput(const BrotliDecoderState* state)
+(define-brotli-dec BrotliDecoderHasMoreOutput (_fun _pointer -> _int))
+
+;; const uint8_t* BrotliDecoderTakeOutput(BrotliDecoderState* state, size_t* size)
+(define-brotli-dec BrotliDecoderTakeOutput (_fun _pointer _pointer -> _pointer))
 
 ;; ---- Helpers ----
 
@@ -396,3 +406,116 @@
                     #f
                     ;; buffer-mode
                     buffer-mode-proc))
+
+;; ---- Streaming Input Port ----
+
+;; Drain any pending output from the decoder into the internal buffer.
+(define (decoder-drain! state buf)
+  (let loop ()
+    (when (not (zero? (BrotliDecoderHasMoreOutput state)))
+      (define size-ptr (malloc _size 'atomic))
+      (ptr-set! size-ptr _size 0)
+      (define data-ptr (BrotliDecoderTakeOutput state size-ptr))
+      (define n (ptr-ref size-ptr _size))
+      (when (> n 0)
+        (define chunk (make-bytes n))
+        (memcpy chunk data-ptr n)
+        (write-bytes chunk buf))
+      (loop))))
+
+;; (open-brotli-input in [#:close? c] [#:name n]) -> input-port?
+;;
+;; Returns a new input port that decompresses Brotli-compressed data read
+;; from `in`.  Closing the returned port destroys the decoder state.
+;; If `close?` is #t (the default), the underlying port `in` is also closed.
+(define (open-brotli-input in #:close? [close? #t] #:name [name 'brotli-input])
+  (define state (BrotliDecoderCreateInstance #f #f #f))
+  (unless state
+    (error 'open-brotli-input "failed to create decoder instance"))
+
+  ;; Internal buffer of decompressed bytes not yet returned to the caller.
+  (define pending (open-output-bytes))
+  (define pending-input (open-input-bytes #""))
+
+  ;; Refresh the pending input port from the pending output buffer.
+  (define (refresh-pending!)
+    (define bs (get-output-bytes pending #t))
+    (when (> (bytes-length bs) 0)
+      (set! pending-input (open-input-bytes bs))))
+
+  (define closed? #f)
+  (define finished? #f)
+  (define read-chunk-size 4096)
+
+  ;; Feed compressed data from `in` through the decoder until we have
+  ;; decompressed output or hit EOF / stream end.
+  (define (fill-buffer!)
+    (when (and (not finished?) (not closed?))
+      (define compressed (read-bytes read-chunk-size in))
+      (define eof? (eof-object? compressed))
+      (define input-bstr (if eof? #"" compressed))
+      (define avail-in-ptr (malloc _size 'atomic))
+      (define next-in-ptr (malloc _pointer 'atomic))
+      (define avail-out-ptr (malloc _size 'atomic))
+      (define next-out-ptr (malloc _pointer 'atomic))
+      (ptr-set! avail-in-ptr _size (bytes-length input-bstr))
+      (ptr-set! next-in-ptr _pointer (if (zero? (bytes-length input-bstr)) #f input-bstr))
+      ;; Use TakeOutput strategy (same as encoder): set avail_out=0, next_out=NULL.
+      (ptr-set! avail-out-ptr _size 0)
+      (ptr-set! next-out-ptr _pointer #f)
+      (let loop ()
+        (define result
+          (BrotliDecoderDecompressStream state
+                                         avail-in-ptr
+                                         next-in-ptr
+                                         avail-out-ptr
+                                         next-out-ptr
+                                         #f))
+        (decoder-drain! state pending)
+        (cond
+          [(= result BROTLI_DECODER_RESULT_ERROR)
+           (define code (BrotliDecoderGetErrorCode state))
+           (define msg (BrotliDecoderErrorString code))
+           (error 'brotli-input "decompression failed: ~a" msg)]
+          [(= result BROTLI_DECODER_RESULT_SUCCESS) (set! finished? #t)]
+          ;; Drain produced output and continue processing remaining input.
+          [(= result BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) (loop)]
+          [(= result BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT)
+           ;; If we got EOF from the underlying port, the stream is truncated.
+           (when eof?
+             (error 'brotli-input "input is incomplete or corrupted"))]))))
+
+  ;; read-in : bytes -> nat or eof
+  (define (read-in bstr)
+    ;; First, try to satisfy from already-decompressed pending bytes.
+    (refresh-pending!)
+    (define n (read-bytes-avail!* bstr pending-input))
+    (cond
+      [(and (number? n) (> n 0)) n]
+      ;; Need more decompressed data.
+      [finished? eof]
+      [else
+       (fill-buffer!)
+       (refresh-pending!)
+       (define m (read-bytes-avail!* bstr pending-input))
+       (cond
+         [(and (number? m) (> m 0)) m]
+         [finished? eof]
+         ;; Should not happen, but guard against infinite loops.
+         [else eof])]))
+
+  ;; close : -> void
+  (define (do-close)
+    (unless closed?
+      (set! closed? #t)
+      (BrotliDecoderDestroyInstance state)
+      (when close?
+        (close-input-port in))))
+
+  (make-input-port name
+                   ;; read-in
+                   read-in
+                   ;; peek (use #f for default based on read-in)
+                   #f
+                   ;; close
+                   do-close))

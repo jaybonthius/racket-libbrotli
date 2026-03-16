@@ -22,7 +22,9 @@
                            #:lgblock lgblock/c
                            #:close? boolean?
                            #:name symbol?)
-                output-port?)])
+                output-port?)]
+          ;; Streaming input port
+          [open-brotli-input (->* (input-port?) (#:close? boolean? #:name symbol?) input-port?)])
 
          ;; Constants (no contracts needed for plain values)
          quality/c

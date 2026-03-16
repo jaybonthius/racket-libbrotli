@@ -223,3 +223,92 @@
   (close-output-port bport)
   (define compressed (get-output-bytes sink))
   (check-equal? (brotli-decompress compressed) #"Streaming UTF-8 text mode test."))
+
+;; =========================================================================
+;; Streaming input port tests
+;; =========================================================================
+
+(test-case "input-port: basic read round-trip"
+  (define input #"Hello from the streaming decoder!")
+  (define compressed (brotli-compress input))
+  (define bport (open-brotli-input (open-input-bytes compressed) #:close? #f))
+  (define decompressed (port->bytes bport))
+  (close-input-port bport)
+  (check-equal? decompressed input))
+
+(test-case "input-port: read-string works through port"
+  (define input #"Hello, streaming brotli input!")
+  (define compressed (brotli-compress input))
+  (define bport (open-brotli-input (open-input-bytes compressed) #:close? #f))
+  (define decompressed (read-string 100 bport))
+  (close-input-port bport)
+  (check-equal? decompressed "Hello, streaming brotli input!"))
+
+(test-case "input-port: incremental reads with small buffer"
+  (define input #"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+  (define compressed (brotli-compress input))
+  (define bport (open-brotli-input (open-input-bytes compressed) #:close? #f))
+  ;; Read in small chunks.
+  (define result (open-output-bytes))
+  (let loop ()
+    (define chunk (read-bytes 4 bport))
+    (unless (eof-object? chunk)
+      (write-bytes chunk result)
+      (loop)))
+  (close-input-port bport)
+  (check-equal? (get-output-bytes result) input))
+
+(test-case "input-port: empty compressed input"
+  (define compressed (brotli-compress #""))
+  (define bport (open-brotli-input (open-input-bytes compressed) #:close? #f))
+  (define decompressed (port->bytes bport))
+  (close-input-port bport)
+  (check-equal? decompressed #""))
+
+(test-case "input-port: large payload"
+  (define input (make-bytes 100000 (char->integer #\z)))
+  (define compressed (brotli-compress input))
+  (define bport (open-brotli-input (open-input-bytes compressed) #:close? #f))
+  (define decompressed (port->bytes bport))
+  (close-input-port bport)
+  (check-equal? decompressed input))
+
+(test-case "input-port: round-trip with open-brotli-output"
+  ;; Compress through output port, decompress through input port.
+  (define input #"Symmetric streaming test: output port -> input port.")
+  (define sink (open-output-bytes))
+  (define out-port (open-brotli-output sink #:quality 4 #:close? #f))
+  (write-bytes input out-port)
+  (close-output-port out-port)
+  (define compressed (get-output-bytes sink))
+  (define in-port (open-brotli-input (open-input-bytes compressed) #:close? #f))
+  (define decompressed (port->bytes in-port))
+  (close-input-port in-port)
+  (check-equal? decompressed input))
+
+(test-case "input-port: close? #t closes underlying port"
+  (define underlying (open-input-bytes (brotli-compress #"data")))
+  (define bport (open-brotli-input underlying #:close? #t))
+  (port->bytes bport)
+  (close-input-port bport)
+  (check-true (port-closed? underlying) "underlying port should be closed"))
+
+(test-case "input-port: close? #f leaves underlying port open"
+  (define underlying (open-input-bytes (brotli-compress #"data")))
+  (define bport (open-brotli-input underlying #:close? #f))
+  (port->bytes bport)
+  (close-input-port bport)
+  (check-false (port-closed? underlying) "underlying port should remain open"))
+
+(test-case "input-port: invalid compressed data raises error"
+  (define bport (open-brotli-input (open-input-bytes #"this is not valid brotli") #:close? #f))
+  (check-exn exn:fail? (lambda () (port->bytes bport))))
+
+(test-case "input-port: different compression qualities"
+  (define input #"Testing input port with various quality levels.")
+  (for ([q (in-range 0 12)])
+    (define compressed (brotli-compress input q))
+    (define bport (open-brotli-input (open-input-bytes compressed) #:close? #f))
+    (define decompressed (port->bytes bport))
+    (close-input-port bport)
+    (check-equal? decompressed input (format "quality ~a round-trip via input port failed" q))))
