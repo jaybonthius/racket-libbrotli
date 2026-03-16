@@ -1,7 +1,7 @@
 #lang info
 
 (define license 'MIT)
-(define version "1.1.0")
+(define version "1.0.0")
 (define deps '("base"))
 (define copy-foreign-libs '("libbrotlicommon.so" "libbrotlienc.so" "libbrotlidec.so"))
 (define install-platform #rx"x86_64-linux")
