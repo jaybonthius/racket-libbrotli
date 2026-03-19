@@ -8,5 +8,5 @@ docker run --rm \
        -e PREFIX="$PREFIX" \
        -v "$(pwd)":"$(pwd)" \
        -w "$(pwd)" \
-       debian:11 \
+       debian:10 \
        bash -c 'apt update && apt install -y build-essential cmake && mkdir -p brotli/out && cd brotli/out && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PREFIX" -DBUILD_SHARED_LIBS=ON .. && cmake --build . --config Release --target install && find "$PREFIX"/lib -name "libbrotli*.so.*" -not -type l -exec strip {} +'
