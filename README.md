@@ -10,8 +10,8 @@ The dynamic libraries are built on the following systems:
 
 | Package                  | OS/Version  | Compatibility                           |
 |--------------------------|-------------|-----------------------------------------|
-| libbrotli-aarch64-linux  | Debian 11   | Ubuntu 20.04 and up, Debian 11 and up   |
-| libbrotli-x86_64-linux   | Debian 11   | Ubuntu 20.04 and up, Debian 11 and up   |
+| libbrotli-aarch64-linux  | Debian 10   | Ubuntu 18.04 and up, Debian 10 and up   |
+| libbrotli-x86_64-linux   | Debian 10   | Ubuntu 18.04 and up, Debian 10 and up   |
 | libbrotli-aarch64-macosx | macOS 15    | macOS 14 (Sonoma) and up                |
 | libbrotli-x86_64-macosx  | macOS 15    | macOS 15 (Sequoia) and up               |
 | libbrotli-i386-win32     | Windows 11  | Windows 11 and up                       |
