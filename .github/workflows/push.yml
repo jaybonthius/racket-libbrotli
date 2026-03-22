@@ -157,7 +157,7 @@ jobs:
             cp "artifacts/win32-i386/lib/${lib}.dll" "libbrotli-i386-win32/${lib}.dll"
             cp "artifacts/win32-x86-64/lib/${lib}.dll" "libbrotli-x86_64-win32/${lib}.dll"
           done
-          version=$(grep version libbrotli-x86_64-linux/info.rkt | cut -d'"' -f2)
+          version="${GITHUB_REF_NAME#v}"
           for package in libbrotli-aarch64-linux libbrotli-aarch64-macosx libbrotli-x86_64-linux libbrotli-x86_64-macosx libbrotli-i386-win32 libbrotli-x86_64-win32; do
             pushd "${package}"
             tar -czf "../${package}-${version}.tar.gz" LICENSE info.rkt libbrotli*
@@ -167,7 +167,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version=$(grep version libbrotli-x86_64-linux/info.rkt | cut -d'"' -f2)
+          version="${GITHUB_REF_NAME#v}"
           gh release upload "${{ github.ref_name }}" \
             libbrotli-aarch64-linux-${version}.tar.gz \
             libbrotli-aarch64-macosx-${version}.tar.gz \
