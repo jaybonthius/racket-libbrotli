@@ -2,8 +2,10 @@
 
 @(require scribble/manual
           (for-label libbrotli
+                     libbrotli/http
                      racket/base
-                     racket/contract))
+                     racket/contract
+                     web-server/http))
 
 @title{libbrotli: Brotli Compression for Racket}
 
@@ -130,6 +132,47 @@ Accepts one of @racket[BROTLI_MODE_GENERIC] (@racket[0]),
 Equivalent to @racket[(or/c (=/c 0) (integer-in 16 24))]. Accepts @racket[0]
 (auto-selected based on quality) or an explicit block size from @racket[16] to
 @racket[24]. The value is the base-2 logarithm of the maximum input block size.
+}
+
+@section{HTTP Middleware}
+
+@defmodule[libbrotli/http]
+
+@defproc[(wrap-brotli-compress [handler (-> request? response?)]
+                               [#:quality quality quality/c 5]
+                               [#:window window window/c 22]
+                               [#:mode mode mode/c BROTLI_MODE_TEXT])
+         (-> request? response?)]{
+Returns a new handler that wraps @racket[handler] with Brotli response compression.
+
+When the client's @tt{Accept-Encoding} header includes @tt{br}, the response body is
+compressed with Brotli and @tt{Content-Encoding: br} and @tt{Vary: Accept-Encoding}
+headers are added. Otherwise the response is passed through unchanged.
+
+Flushing the output port (as @racket[datastar-sse] does after each SSE event) issues a
+Brotli @tt{FLUSH} operation and propagates @racket[flush-output] to the underlying TCP
+port, so each event reaches the client immediately.
+
+@itemlist[
+  @item{@racket[quality] --- Compression level from @racket[0] (fastest) to @racket[11]
+        (smallest). Default @racket[5] is a reasonable balance for streaming use cases.}
+  @item{@racket[window] --- Sliding window size from @racket[10] to @racket[24].}
+  @item{@racket[mode] --- One of @racket[BROTLI_MODE_GENERIC], @racket[BROTLI_MODE_TEXT]
+        (default, best for SSE/HTML), or @racket[BROTLI_MODE_FONT].}
+]
+
+Example:
+
+@codeblock{
+(require libbrotli/http
+         web-server/dispatch
+         web-server/servlet-dispatch
+         web-server/web-server)
+
+(define-values (app _uri) (dispatch-rules ...))
+
+(serve #:dispatch (dispatch/servlet (wrap-brotli-compress app)) ...)
+}
 }
 
 @section{Constants}
