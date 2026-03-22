@@ -1,10 +1,8 @@
 #lang racket/base
 
-(require rackunit
+(require libbrotli
          racket/port
-         libbrotli)
-
-;; -- Round-trip: compress then decompress ---------------------------------
+         rackunit)
 
 (test-case "round-trip with default quality"
   (define input #"Hello, Brotli! This is a test of the compression library.")
@@ -24,13 +22,9 @@
   (define compressed (brotli-compress input 11))
   (check-equal? (brotli-decompress compressed) input))
 
-;; -- Empty input ----------------------------------------------------------
-
 (test-case "round-trip with empty input"
   (define compressed (brotli-compress #""))
   (check-equal? (brotli-decompress compressed) #""))
-
-;; -- In-place buffer variants ---------------------------------------------
 
 (test-case "brotli-compress! and brotli-decompress!"
   (define input #"Testing the in-place buffer API.")
@@ -46,16 +40,11 @@
   (check-equal? decompressed-len (bytes-length input))
   (check-equal? (subbytes out 0 decompressed-len) input))
 
-;; -- Larger payload -------------------------------------------------------
-
 (test-case "round-trip with larger repetitive data"
   (define input (make-bytes 100000 (char->integer #\x)))
   (define compressed (brotli-compress input))
-  ;; Repetitive data should compress very well.
   (check-true (< (bytes-length compressed) (bytes-length input)))
   (check-equal? (brotli-decompress compressed) input))
-
-;; -- Error cases ----------------------------------------------------------
 
 (test-case "brotli-decompress! with too-small output buffer"
   (define input #"Some data that needs space for decompression.")
@@ -75,8 +64,6 @@
   (define input (make-bytes 4096 (char->integer #\a)))
   (define tiny-dst (make-bytes 1))
   (check-exn exn:fail? (lambda () (brotli-compress! input tiny-dst))))
-
-;; -- Mode, window, lgblock parameters --------------------------------------
 
 (test-case "round-trip with mode TEXT"
   (define input #"UTF-8 text content for text mode compression test.")
@@ -121,12 +108,7 @@
   (define compressed (subbytes dst 0 n))
   (check-equal? (brotli-decompress compressed) input))
 
-;; =========================================================================
-;; Streaming output port tests
-;; =========================================================================
-
 (test-case "streaming: basic write and close round-trip"
-  ;; Write data through a brotli output port, close it, then decompress.
   (define sink (open-output-bytes))
   (define bport (open-brotli-output sink #:quality 4 #:close? #f))
   (write-bytes #"Hello from the streaming encoder!" bport)
@@ -148,19 +130,14 @@
   (check-equal? decompressed #"chunk one chunk two chunk three"))
 
 (test-case "streaming: flush produces decodable output mid-stream"
-  ;; This is the key test for SSE: after a flush, the compressed bytes
-  ;; produced so far must be decodable by the receiver.
   (define sink (open-output-bytes))
   (define bport (open-brotli-output sink #:quality 1 #:close? #f))
-  ;; Write first event and flush.
   (write-bytes #"event: datastar-patch-elements\ndata: <div>hello</div>\n\n" bport)
   (flush-output bport)
   (define after-first-flush (get-output-bytes sink))
   (check-true (> (bytes-length after-first-flush) 0) "flush should produce output bytes")
-  ;; Write second event and flush.
   (write-bytes #"event: datastar-patch-signals\ndata: signals {\"count\":1}\n\n" bport)
   (flush-output bport)
-  ;; Close to finalize.
   (close-output-port bport)
   (define compressed (get-output-bytes sink))
   (define decompressed (brotli-decompress compressed))
@@ -173,7 +150,6 @@
   (define bport (open-brotli-output sink #:quality 4 #:close? #f))
   (close-output-port bport)
   (define compressed (get-output-bytes sink))
-  ;; Even with no data, finishing the stream produces a valid brotli frame.
   (define decompressed (brotli-decompress compressed))
   (check-equal? decompressed #""))
 
@@ -236,10 +212,6 @@
   (define compressed (get-output-bytes sink))
   (check-equal? (brotli-decompress compressed) #"Streaming UTF-8 text mode test."))
 
-;; =========================================================================
-;; Streaming input port tests
-;; =========================================================================
-
 (test-case "input-port: basic read round-trip"
   (define input #"Hello from the streaming decoder!")
   (define compressed (brotli-compress input))
@@ -260,7 +232,6 @@
   (define input #"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
   (define compressed (brotli-compress input))
   (define bport (open-brotli-input (open-input-bytes compressed) #:close? #f))
-  ;; Read in small chunks.
   (define result (open-output-bytes))
   (let loop ()
     (define chunk (read-bytes 4 bport))
@@ -286,7 +257,6 @@
   (check-equal? decompressed input))
 
 (test-case "input-port: round-trip with open-brotli-output"
-  ;; Compress through output port, decompress through input port.
   (define input #"Symmetric streaming test: output port -> input port.")
   (define sink (open-output-bytes))
   (define out-port (open-brotli-output sink #:quality 4 #:close? #f))
@@ -325,10 +295,6 @@
     (close-input-port bport)
     (check-equal? decompressed input (format "quality ~a round-trip via input port failed" q))))
 
-;; =========================================================================
-;; Dictionary tests
-;; =========================================================================
-
 (define test-dictionary #"The quick brown fox jumps over the lazy dog. HTTP/1.1 200 OK")
 
 (test-case "dictionary: one-shot compress/decompress round-trip"
@@ -348,7 +314,6 @@
   (check-equal? (subbytes out 0 m) input))
 
 (test-case "dictionary: improves compression ratio"
-  ;; Data that partially overlaps with the dictionary should compress better.
   (define input
     #"The quick brown fox jumps over the lazy dog. HTTP/1.1 200 OK Content-Type: text/html")
   (define without-dict (brotli-compress input))
@@ -359,13 +324,10 @@
 (test-case "dictionary: wrong dictionary fails to decompress correctly"
   (define input #"The quick brown fox jumps.")
   (define compressed (brotli-compress input #:dictionary test-dictionary))
-  ;; Decompressing without the dictionary (or with the wrong one) should
-  ;; either produce wrong data or error.
   (define wrong-dict #"completely different dictionary content here")
   (check-exn exn:fail?
              (lambda ()
                (define result (brotli-decompress compressed #:dictionary wrong-dict))
-               ;; If it didn't error, it should at least produce wrong output.
                (unless (equal? result input)
                  (error "wrong output")))))
 
@@ -407,10 +369,6 @@
   (close-input-port in-port)
   (check-equal? decompressed input))
 
-;; =========================================================================
-;; Contract violation tests
-;; =========================================================================
-
 (test-case "contract: invalid quality rejected"
   (check-exn exn:fail? (lambda () (brotli-compress #"data" 15)))
   (check-exn exn:fail? (lambda () (brotli-compress #"data" -1))))
@@ -427,10 +385,6 @@
   (check-exn exn:fail? (lambda () (brotli-compress #"data" #:lgblock 7)))
   (check-exn exn:fail? (lambda () (brotli-compress #"data" #:lgblock 15)))
   (check-exn exn:fail? (lambda () (brotli-compress #"data" #:lgblock 25))))
-
-;; =========================================================================
-;; Combined parameter tests
-;; =========================================================================
 
 (test-case "brotli-compress! with lgblock and dictionary"
   (define input #"The quick brown fox jumps over the lazy dog.")
@@ -458,12 +412,7 @@
   (define decompressed (brotli-decompress compressed #:dictionary test-dictionary))
   (check-equal? decompressed input))
 
-;; =========================================================================
-;; Stronger dictionary assertion
-;; =========================================================================
-
 (test-case "dictionary: strictly improves ratio on overlapping data"
-  ;; Repeat dictionary content many times so the benefit is unambiguous.
   (define input
     (apply bytes-append
            (for/list ([_ (in-range 20)])
@@ -472,10 +421,6 @@
   (define with-dict (brotli-compress input #:dictionary test-dictionary))
   (check-true (< (bytes-length with-dict) (bytes-length without-dict))
               "dictionary should strictly improve compression on highly overlapping data"))
-
-;; =========================================================================
-;; Streaming input port: wrong dictionary
-;; =========================================================================
 
 (test-case "dictionary: streaming input port with wrong dictionary"
   (define input #"The quick brown fox jumps over the lazy dog.")
@@ -488,16 +433,10 @@
        (open-brotli-input (open-input-bytes compressed) #:dictionary wrong-dict #:close? #f))
      (define result (port->bytes bport))
      (close-input-port bport)
-     ;; If it didn't error, it should at least produce wrong output.
      (unless (equal? result input)
        (error "wrong output")))))
 
-;; =========================================================================
-;; Non-uniform large payload
-;; =========================================================================
-
 (test-case "round-trip with non-uniform large payload"
-  ;; Build a pseudo-random but deterministic byte string with varied content.
   (define size 100000)
   (define buf (make-bytes size))
   (for ([i (in-range size)])

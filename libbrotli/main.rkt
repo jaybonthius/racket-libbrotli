@@ -1,55 +1,48 @@
 #lang racket/base
 
-(require racket/contract
+(require racket/contract/base
          "foreign.rkt")
 
 (provide (contract-out
-          ;; One-shot compression / decompression
-          [brotli-compress!
-           (->* (bytes? bytes?)
-                (quality/c #:window window/c #:mode mode/c #:lgblock lgblock/c #:dictionary bytes?)
+          [brotli-compress! ;; review: ignore
+           (->* [bytes? bytes?]
+                [quality/c #:window window/c #:mode mode/c #:lgblock lgblock/c #:dictionary bytes?]
                 exact-nonnegative-integer?)]
-          [brotli-decompress! (->* (bytes? bytes?) (#:dictionary bytes?) exact-nonnegative-integer?)]
-          [brotli-compress
-           (->* (bytes?)
-                (quality/c #:window window/c #:mode mode/c #:lgblock lgblock/c #:dictionary bytes?)
+          [brotli-decompress! ;; review: ignore
+           (->* [bytes? bytes?] [#:dictionary bytes?] exact-nonnegative-integer?)]
+          [brotli-compress ;; review: ignore
+           (->* [bytes?]
+                [quality/c #:window window/c #:mode mode/c #:lgblock lgblock/c #:dictionary bytes?]
                 bytes?)]
-          [brotli-decompress
-           (->* (bytes?) ((or/c #f exact-positive-integer?) #:dictionary bytes?) bytes?)]
-          ;; Streaming output port
-          [open-brotli-output
-           (->* (output-port?)
-                (#:quality quality/c
-                           #:window window/c
-                           #:mode mode/c
-                           #:lgblock lgblock/c
-                           #:dictionary bytes?
-                           #:close? boolean?
-                           #:name symbol?)
+          [brotli-decompress ;; review: ignore
+           (->* [bytes?] [(or/c #f exact-positive-integer?) #:dictionary bytes?] bytes?)]
+          [open-brotli-output ;; review: ignore
+           (->* [output-port?]
+                [#:quality quality/c
+                 #:window window/c
+                 #:mode mode/c
+                 #:lgblock lgblock/c
+                 #:dictionary bytes?
+                 #:close? boolean?
+                 #:name symbol?]
                 output-port?)]
-          ;; Streaming input port
-          [open-brotli-input
-           (->* (input-port?) (#:dictionary bytes? #:close? boolean? #:name symbol?) input-port?)])
-
-         ;; Constants (no contracts needed for plain values)
+          [open-brotli-input ;; review: ignore
+           (->* [input-port?] [#:dictionary bytes? #:close? boolean? #:name symbol?] input-port?)])
          quality/c
          window/c
          mode/c
          lgblock/c
-         BROTLI_DEFAULT_QUALITY
-         BROTLI_DEFAULT_WINDOW
-         BROTLI_MIN_QUALITY
-         BROTLI_MAX_QUALITY
-         BROTLI_MIN_WINDOW_BITS
-         BROTLI_MAX_WINDOW_BITS
-         BROTLI_MODE_GENERIC
-         BROTLI_MODE_TEXT
-         BROTLI_MODE_FONT)
+         BROTLI_DEFAULT_QUALITY ;; review: ignore
+         BROTLI_DEFAULT_WINDOW ;; review: ignore
+         BROTLI_MIN_QUALITY ;; review: ignore
+         BROTLI_MAX_QUALITY ;; review: ignore
+         BROTLI_MIN_WINDOW_BITS ;; review: ignore
+         BROTLI_MAX_WINDOW_BITS ;; review: ignore
+         BROTLI_MODE_GENERIC ;; review: ignore
+         BROTLI_MODE_TEXT ;; review: ignore
+         BROTLI_MODE_FONT) ;; review: ignore
 
 (define quality/c (integer-in 0 11))
-
 (define window/c (integer-in 10 24))
-
 (define mode/c (or/c (=/c 0) (=/c 1) (=/c 2)))
-
 (define lgblock/c (or/c (=/c 0) (integer-in 16 24)))
