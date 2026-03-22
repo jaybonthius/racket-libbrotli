@@ -3,7 +3,7 @@
 
 (define license 'MIT)
 (define collection "libbrotli")
-(define version "1.0")
+(define version "0.1")
 (define deps
   '("base" ["libbrotli-aarch64-linux" #:platform #rx"aarch64-linux"]
            ["libbrotli-aarch64-macosx" #:platform #rx"aarch64-macosx"]
