@@ -25,12 +25,12 @@ compression library.
          bytes?]{
 Compresses @racket[src] and returns the compressed bytes.
 
-@codeblock|{
+@racketblock[
 (require libbrotli)
 
 (define compressed (brotli-compress #"hello world"))
 (brotli-decompress compressed) ; => #"hello world"
-}|
+]
 }
 
 @defproc[(brotli-decompress [src bytes?]
@@ -83,7 +83,7 @@ closes @racket[out].
 Note: the default quality for streaming is 6 (not 11), which is a better
 tradeoff for real-time use.
 
-@codeblock|{
+@racketblock[
 (require libbrotli)
 
 (define out (open-output-bytes))
@@ -91,7 +91,7 @@ tradeoff for real-time use.
 (write-bytes #"hello world" brotli-out)
 (close-output-port brotli-out)
 (brotli-decompress (get-output-bytes out)) ; => #"hello world"
-}|
+]
 }
 
 @defproc[(open-brotli-input [in input-port?]
