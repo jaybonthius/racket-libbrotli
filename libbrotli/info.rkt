@@ -11,4 +11,5 @@
            ["libbrotli-x86_64-macosx" #:platform #rx"x86_64-macosx"]
            ["libbrotli-i386-win32" #:platform #rx"win32.i386"]
            ["libbrotli-x86_64-win32" #:platform #rx"win32.x86_64"]))
-(define build-deps '("rackunit-lib"))
+(define scribblings '(("scribblings/libbrotli.scrbl")))
+(define build-deps '("rackunit-lib" "scribble-lib" "racket-doc"))
