@@ -1,7 +1,8 @@
 # racket-libbrotli [![Build](https://github.com/jaybonthius/racket-libbrotli/actions/workflows/push.yml/badge.svg?branch=main)](https://github.com/jaybonthius/racket-libbrotli/actions/workflows/push.yml)
 
-This package distributes [libbrotli] as a Racket package for Linux,
-macOS, and Windows.
+Racket bindings to Google's [Brotli][libbrotli] compression library.
+
+[Documentation](https://docs.racket-lang.org/libbrotli/) is available on the package server.
 
 Each platform package ships three shared libraries:
 `libbrotlicommon`, `libbrotlienc`, and `libbrotlidec`.
