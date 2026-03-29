@@ -42,6 +42,61 @@ Decompresses @racket[src] and returns the original bytes. If
 prevent decompression bombs.
 }
 
+@defthing[quality/c flat-contract?]{
+Integer in the range @racket[0] to @racket[11].
+}
+
+@defthing[BROTLI_DEFAULT_QUALITY exact-nonnegative-integer? #:value 11]{
+Default compression quality for one-shot functions.
+}
+
+@defthing[BROTLI_MIN_QUALITY exact-nonnegative-integer? #:value 0]{
+Minimum compression quality (fastest, lowest ratio).
+}
+
+@defthing[BROTLI_MAX_QUALITY exact-nonnegative-integer? #:value 11]{
+Maximum compression quality (slowest, highest ratio).
+}
+
+@defthing[window/c flat-contract?]{
+Integer in the range @racket[10] to @racket[24].
+}
+
+@defthing[BROTLI_DEFAULT_WINDOW exact-nonnegative-integer? #:value 22]{
+Default sliding window size in bits.
+}
+
+@defthing[BROTLI_MIN_WINDOW_BITS exact-nonnegative-integer? #:value 10]{
+Minimum window size (1 KB).
+}
+
+@defthing[BROTLI_MAX_WINDOW_BITS exact-nonnegative-integer? #:value 24]{
+Maximum window size (16 MB).
+}
+
+@defthing[mode/c flat-contract?]{
+One of @racket[0], @racket[1], or @racket[2] (corresponding to
+@racket[BROTLI_MODE_GENERIC], @racket[BROTLI_MODE_TEXT], and
+@racket[BROTLI_MODE_FONT]).
+}
+
+@defthing[BROTLI_MODE_GENERIC exact-nonnegative-integer? #:value 0]{
+Default compression mode. Works for any input.
+}
+
+@defthing[BROTLI_MODE_TEXT exact-nonnegative-integer? #:value 1]{
+Compression mode optimized for UTF-8 text.
+}
+
+@defthing[BROTLI_MODE_FONT exact-nonnegative-integer? #:value 2]{
+Compression mode optimized for WOFF 2.0 fonts.
+}
+
+@defthing[lgblock/c flat-contract?]{
+Either @racket[0] (automatic) or an integer in the range @racket[16] to
+@racket[24].
+}
+
 @section{Buffer Compression}
 
 @defproc[(brotli-compress! [src bytes?]
@@ -102,63 +157,4 @@ tradeoff for real-time use.
 Returns an input port that decompresses Brotli-encoded data read from
 @racket[in]. If @racket[close?] is @racket[#t], closing the returned port also
 closes @racket[in].
-}
-
-@section{Constants}
-
-@defthing[BROTLI_DEFAULT_QUALITY exact-nonnegative-integer? #:value 11]{
-Default compression quality for one-shot functions.
-}
-
-@defthing[BROTLI_MIN_QUALITY exact-nonnegative-integer? #:value 0]{
-Minimum compression quality (fastest, lowest ratio).
-}
-
-@defthing[BROTLI_MAX_QUALITY exact-nonnegative-integer? #:value 11]{
-Maximum compression quality (slowest, highest ratio).
-}
-
-@defthing[BROTLI_DEFAULT_WINDOW exact-nonnegative-integer? #:value 22]{
-Default sliding window size in bits.
-}
-
-@defthing[BROTLI_MIN_WINDOW_BITS exact-nonnegative-integer? #:value 10]{
-Minimum window size (1 KB).
-}
-
-@defthing[BROTLI_MAX_WINDOW_BITS exact-nonnegative-integer? #:value 24]{
-Maximum window size (16 MB).
-}
-
-@defthing[BROTLI_MODE_GENERIC exact-nonnegative-integer? #:value 0]{
-Default compression mode. Works for any input.
-}
-
-@defthing[BROTLI_MODE_TEXT exact-nonnegative-integer? #:value 1]{
-Compression mode optimized for UTF-8 text.
-}
-
-@defthing[BROTLI_MODE_FONT exact-nonnegative-integer? #:value 2]{
-Compression mode optimized for WOFF 2.0 fonts.
-}
-
-@section{Contracts}
-
-@defthing[quality/c flat-contract?]{
-Integer in the range @racket[0] to @racket[11].
-}
-
-@defthing[window/c flat-contract?]{
-Integer in the range @racket[10] to @racket[24].
-}
-
-@defthing[mode/c flat-contract?]{
-One of @racket[0], @racket[1], or @racket[2] (corresponding to
-@racket[BROTLI_MODE_GENERIC], @racket[BROTLI_MODE_TEXT], and
-@racket[BROTLI_MODE_FONT]).
-}
-
-@defthing[lgblock/c flat-contract?]{
-Either @racket[0] (automatic) or an integer in the range @racket[16] to
-@racket[24].
 }
