@@ -1,3 +1,6 @@
 artifacts/
 compiled/
 doc/
+*.css
+*.js
+*.html
